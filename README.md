@@ -1,2 +1,2 @@
-# Myocardial-AmyloidRS
-Computed tomography-derived myocardial radiomics for detection of transthyretin cardiac amyloidosis 
+# Myocardial Radiomics
+This is a method to extract left ventricle myocardial radiomics from computed tomography scans.  
