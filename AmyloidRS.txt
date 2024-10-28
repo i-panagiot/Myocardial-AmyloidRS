@@ -1,0 +1,124 @@
+### Computed tomography-derived myocardial radiomics for detection of transthyretin cardiac amyloidosis 
+### 28 Oct 2024
+
+rm(list=ls())
+library(caret)
+library(cluster)
+library(corrplot)
+library(dplyr)
+library(factoextra)
+library(FactoMineR)
+library(fpc)
+library(GGally)
+library(ggfortify)
+library(ggsurvfit)
+library(gtsummary)
+library(gplots)
+library(ggplot2)
+library(janitor)
+library(KMsurv)
+library(lubridate)
+library(magrittr)
+library(NbClust)
+library(ranger)
+library(RColorBrewer)
+library(survival)
+library(survminer)
+library(tidycmprsk)
+library(tidyr)
+library(xlsx)
+library(zoo)
+
+
+radiomics <- radiomics[,sapply(radiomics, is.numeric)]
+zv <- apply(radiomics, 2, function(x) length(unique(x)) == 1) # remove radiomics if zero variance
+radiomics <- radiomics[, !zv] 
+
+#import datasets
+pca_result <- prcomp(radiomics, scale. = TRUE)  # Scale for standardization
+principal_components <- as.data.frame(pca_result$x)
+# Rename columns of the principal components (PC1, PC2, etc.)
+colnames(principal_components) <- paste0("PC", 1:ncol(principal_components))
+# Show the new DataFrame with principal components
+print(principal_components)
+
+
+# Extract loadings for each observation
+loadings <- predict(pca_result, newdata = radiomics)
+# Create a new DataFrame for the loadings
+loadings_df <- as.data.frame(loadings)
+
+# Rename columns of the loadings DataFrame
+colnames(loadings_df) <- paste0("Loading", 1:ncol(loadings_df))
+
+# Show the new DataFrame with loadings for each observation
+print(loadings_df) 
+
+
+
+# residualization of radiomics after correlation with blood pool HU
+radiomics <- as.data.frame(scale(radiomics)) # scale radiomics 
+HUdata<-radiomics
+HUdatalm <- HUdata
+model <- lm(mean_HU_blood_pool ~ . - mean_HU_blood_pool, data = HUdata)
+residuals <- residuals(model)
+HUdatalm[, -1] <- HUdata[, -1] - residuals
+HUdatalm <- HUdatalm[, -1]
+radiomics<-HUdatalm
+
+
+
+########################remove highly correlated features create smaller dataset of non-highly correlated features
+findCorrelation(radiomics, cutoff = 0.7, verbose = FALSE, names = TRUE)
+correlations <- cor(radiomics)
+highCorr <- findCorrelation(correlations, cutoff = .7, names = FALSE)
+radiomics2 <- radiomics[, -highCorr]  # keep only small dataset of non-highly correlated radiomics
+
+
+
+
+######### 
+# TOP RADIOMICS ASSOCIATED WITH ECV in the xohort of Study Arm 2 
+radiomics <- radiomics[, -highCorr]
+standardized_radiomics <- as.data.frame(scale(radiomics))
+ECV<-dataecv$ECV
+dataecv<-cbind(ECV, standardized_radiomics) 
+
+data<-dataecv
+cor_matrix <- cor(data)
+
+# Correlations with ECV
+target_variable <- "ECV"
+cor_with_target <- cor_matrix[, target_variable]
+
+# Sort correlations excluding the target variable itself
+sorted_cor <- sort(abs(cor_with_target), decreasing = TRUE)
+# Exclude the target variable itself
+sorted_cor <- sorted_cor[!names(sorted_cor) %in% target_variable]
+# Print the top correlated variables
+sorted_cor
+
+
+###### identify best numnber of  radiomics features to construct a synthetic ECV radiomc signature  
+library(caret)
+library(randomForest)  # Random Forest as the model
+library(e1071)         # SVM if needed
+
+# Define predictor and response variables
+predictors <- ECVdata_subset[,1:18]
+response <- ECVdata_subset$ECV
+
+control <- rfeControl(functions = rfFuncs,  # Use Random Forest for RFE
+                      method = "cv",       # Cross-validation method
+                      number = 5)         # 10-fold cross-validation
+
+# Run the RFE algorithm
+set.seed(123)  # For reproducibility
+rfe_model <- rfe(predictors, 
+                 response, 
+                 sizes = c(1:ncol(predictors)),  # Test different subsets of predictors
+                 rfeControl = control)
+
+# Check results
+print(rfe_model)
+
